@@ -1,6 +1,7 @@
 import discord, random, json, sqlite3, math, confusables, urllib.request, copy, asyncio, os, shutil
 from datetime import datetime
 from contextlib import contextmanager
+from captcha.image import ImageCaptcha
 import threading, _thread
 
 client = discord.Client()
@@ -8,6 +9,7 @@ server = "306153640023031820"
 testserver = "461643418725122086"
 
 Filter = json.loads(open("filter.json").read())
+CaptchaChars = list("adeghjnrtyABDEGHJLNQRTY34789")
 SeriousFilter = json.loads(open("seriousfilter.json").read())
 FunAndGames = "349255881977757696"
 Logs = "332883332528603146"
@@ -42,6 +44,8 @@ PublicChannels = [
 
 ChannelPoints = {
     "349255881977757696": 0,
+    "323229930940792834": 0,
+    "654035513514262558": 0,
     "306885827189800960": 3,
     "351182527316099072": 3,
     "372506961171841025": 2,
@@ -145,7 +149,7 @@ async def AddPoints(User, Amount, Channel):
     )
     if Data != []:
         NewPoints = Data[0][1] + Amount
-        NewWkPoints = (Data[0][9] or 0) + (Amount if Amount < 5 else 1)
+        #NewWkPoints = (Data[0][9] or 0) + (Amount if Amount < 5 else 1)
         NewLevel = 1 + (math.floor(0.3 * math.sqrt(NewPoints)))
         if NewLevel != Data[0][2]:
             #sql.run(`UPDATE scores SET points = ${row.points + amount} WHERE userId = ${member.id}`);
@@ -156,7 +160,7 @@ async def AddPoints(User, Amount, Channel):
             await SendLevelMsg(User, Channel, "Level up!", "Congratulations, <@" + User.id + ">!\nYou've just levelled up to **level " + str(NewLevel) + "!**")
 
         Execute("Set","UPDATE scores SET points = " + str(NewPoints) + " WHERE userId = " + User.id)
-        Execute("Set","UPDATE scores SET wkPoints = " + str(NewWkPoints) + " WHERE userId = " + User.id)
+        #Execute("Set","UPDATE scores SET wkPoints = " + str(NewWkPoints) + " WHERE userId = " + User.id)
 
         for i in ObtainableRoles:
             Role = discord.utils.get(server.roles, name=i)
@@ -180,11 +184,12 @@ async def GetLevel(User):
         "Senior Moderator": 6,
         "Moderator": 5,
         "Trial Moderator": 4,
+        "Academics Mod": 3.5,
         "Regular": 3,
         "Verified Lvl.2": 2,
         "Verified": 1
     }
-    Roles = ["Owner", "Administrator", "Senior Moderator", "Moderator", "Trial Moderator", "Regular", "Verified Lvl.2", "Verified"]
+    Roles = ["Owner", "Administrator", "Senior Moderator", "Moderator", "Trial Moderator", "Academics Mod", "Regular", "Verified Lvl.2", "Verified"]
     UserRoles = [i.name for i in User.roles]
     for i in Roles:
         if i in UserRoles:
@@ -669,13 +674,17 @@ async def Stats(Message, Args):
         if Args[0][:2] == "<@":
             User = Message.mentions[0]
         elif Args[0].isdigit():
-            User = await GetUserFromRank(int(Args[0]))
+            if int(Args[0]) < 1000000:
+                User = await GetUserFromRank(int(Args[0]))
+            else:
+                User = server.get_member(Args[0])
     except Exception as e:
         print("5",e)
     Data = Execute(
         "Get",
         "SELECT * FROM scores WHERE userId = \"" + User.id + "\""
     )
+    JoinDate = "30 May 2017" if User.id == "356836476777922562" else User.joined_at.strftime('%d %b %Y')
     await SendLevelMsg(
         User,
         Message.channel,
@@ -684,7 +693,7 @@ async def Stats(Message, Args):
 **Level**: """ + str(Data[0][2]) + """
 **Points**: """ + str(Data[0][1]) + """
 **Rank**: """ + str(await GetRank(User)) + """
-**Joined**: """ + User.joined_at.strftime('%d %b %Y') + "\n**Staff Member** ✔️\n" * (await GetLevel(User) >= 4)
+**Joined**: """ + JoinDate + "\n**Staff Member** ✔️\n" * (await GetLevel(User) >= 4)
     )
 
 async def Leaderboard(Message, Args):
@@ -826,7 +835,7 @@ async def GangLeaderboard(Message, Args):
         Data = Execute("Get", "SELECT * FROM gangs")
         Count = 0
         for i in Data:
-            if i[0] != "htij": # for decryption challenge #1
+            if i[0] != "Player3": # for decryption challenge #1
                 Gangs[i[0]] = await GetGangPoints(json.loads(i[1].replace("\'", "\"")) + [i[2]] + json.loads(i[3].replace("\'", "\"")))
     for i in sorted(Gangs, key = Gangs.get, reverse = True)[:10]:
         Count += 1
@@ -834,7 +843,7 @@ async def GangLeaderboard(Message, Args):
         Results += ["**" + str(Count) + Pos + "**: " + i + " - " + str(Gangs[i]) + " points"]
     Embed = discord.Embed(
         title = "Gang Leaderboard",
-        description = "\n".join(Results + ["*Algorithm may be subject to change.*"]),
+        description = "\n".join(Results + ["*Due to unintended effects on the community, we are changing the way that gangs earn points. If you have any ideas, please use the <#639942887152549899> channel.*"]),
         color = 0x0094ff
     )
     if Results:
@@ -1080,6 +1089,7 @@ async def GangHelp(Message, Args):
     )
 
 async def Gang(Message, Args):
+    if Message.author.id == "237059748250255361": return
     Type = Args[0].lower()
     if Type == "create":
         if await GetLevel(Message.author) >= 3:
@@ -1187,6 +1197,24 @@ async def ResetGangs(Message, Args):
 async def Send(Message, Args):
     await client.send_message(client.get_channel("306153640023031820"), Message.content[5:])
 
+async def Submit(Message, Args):
+    0
+
+async def DeRole(Message, Args):
+    Participant = discord.utils.get(server.roles, name="GJ Participant")
+    msg = await client.send_message(Message.channel, "ok hang on")
+    Count = 0
+    for i in server.members:
+        try:
+            if Participant in i.roles:
+                await client.remove_roles(i, Participant)
+                Count += 1
+                if Count % 10 == 0:
+                    await client.edit_message(msg, "Completed " + str(Count))
+        except:
+            0
+    await client.edit_message(msg, "Complete!")
+
 """
 Level 0: Everyone
 Level 1: Verified
@@ -1199,6 +1227,14 @@ Level 7: Administrator
 Level 8: Owner
 """
 Commands = {
+    "derole": {
+        "level": 8,
+        "run": DeRole
+    },
+    "submit": {
+        "level": 1,
+        "run": Submit
+    },
     "send": {
         "level": 8,
         "run": Send
@@ -1280,7 +1316,7 @@ Commands = {
         "run": UnSHBan
     },
     "aban": {
-        "level": 5,
+        "level": 3.5,
         "run": ABan
     },
     "unaban": {
@@ -1384,7 +1420,9 @@ def ListContainsWord(List, Phrase):
     return False
 
 async def FilterMessage(message):
-    Possible = [x * x.isalpha() for x in message.content.lower().split()]
+    Possible = []
+    for i in message.content.lower().split():
+        Possible += ["".join([x * (x.isalpha()) for x in i])]
     """with time_limit(1, "sleep"):
         if sum(i.isdigit() for i in message.content) <= 10:
             Possible = ["".join([x * (x.isalpha() or x in ". ") for x in i.lower()]) for i in confusables.normalize(message.content, prioritize_alpha = True)]
@@ -1448,12 +1486,11 @@ async def CheckPunishments():
         for x in Options:
             try:
                 if i[Options[x][1]] != None:
-                    #print(float(i[Options[x][1]]), LastMessage)
                     if float(i[Options[x][1]]) <= LastMessage:
                         Role = discord.utils.get(server.roles, name=x)
                         #print(str(i[0]), str(Role))
                         User = server.get_member(i[0])
-                        if not User: return
+                        if not User: break
                         await client.remove_roles(User, Role)
                         await SendEmbed(User, "ScriptersCF", "Your " + Options[x][0] + " has expired in the ScriptersCF Discord Server. Please review our <#306155109203836928> channel to ensure you aren't punished again.")
                         await SendEmbed(client.get_channel(Logs), Options[x][0].title() + " Expired", "**Targets**: <@" + User.id + ">")
@@ -1479,10 +1516,10 @@ def FilterSpamCheck():
 async def CheckForSpam(Message):
     message = Message.content.lower()
     Length = len(message)
-    if Length >= 30:
+    if Length >= 100:
         for i in "abcdefghijklmnopqrstuvwxyz":
             Percentage = (message.count(i) / Length)
-            if Percentage >= 0.3:
+            if Percentage >= 0.4:
                 await client.delete_message(Message)
                 await SendEmbed(
                     Message.author,
@@ -1548,15 +1585,42 @@ def UserHasWon():
         File.close()
         return True
 
+def GenerateCaptcha():
+    Phrase = ""
+    for i in range(random.randint(6, 8)):
+        Phrase += random.choice(CaptchaChars)
+    Image = ImageCaptcha()
+    Image.generate(Phrase)
+    Image.write(Phrase, "out.png")
+    return Phrase
+
+async def VerifyUser(User):
+    if GetRobloxUsername(User.id) != "N/A":
+        return True
+    Phrase = GenerateCaptcha()
+    await SendEmbed(User, "Please respond with the text in the image below.", "After verifying that you are not a bot, you will have full access to our server!")
+    await client.send_file(User, "out.png")
+    Response = await client.wait_for_message(timeout = 30, author = User)
+    if Response:
+        if Phrase in Response.content:
+            await SendEmbed(User, "ScriptersCF", "Thank you for verifying!")
+            return True
+        else:
+            await SendEmbed(User, "ScriptersCF", "Sorry, that's not correct! Try again by typing `!agree` in the pending channel. Note that the CAPTCHA is case-sensitive.")
+            return False
+    else:
+        await SendEmbed(User, "ScriptersCF", "Sorry, you took too long to respond! To try again, please type `!agree` in the pending channel.")
+    return True
+
 async def CheckForBestGang():
     0
 
 @client.event
 async def on_message(message):
     global LastMessage, ToLog
-    if message.author.id == client.user.id or message.channel.id == Logged.id:
+    if message.author.id == client.user.id or message.channel.id == Logged.id or message.author.id == "592762698064986112":
         return
-    
+
     CurrentTime2 = str(datetime.utcnow())
 
     cmsg = "\n**" + CurrentTime2 + " | " + message.author.name + " | <#" + message.channel.id + "> |** " + message.content
@@ -1565,37 +1629,17 @@ async def on_message(message):
     else:
         await client.send_message(Logged, ToLog.replace("@", "(@)"))
         ToLog = cmsg
-    
-    if message.content.startswith("print") and any(i in message.content for i in ['"youdidit"', "'youdidit'", "[[youdidit]]"]):
-        Author = message.author
-        if not await IsDM(message):
-            await client.delete_message(message)
-        Sent = await SendEmbed(Author, "ScriptersCF", "Executing script...")
-        await asyncio.sleep(2)
-        await client.edit_message(Sent, embed = discord.Embed(
-            title = "ScriptersCF",
-            description = """```lua
-> "youdidit"```
-**Congratulations!** 🥳🎉
-You have completed section 1 of our decryption challenge!
-Keep an eye out for information regarding section 2!
-
-""" + ["Unfortunately, you were not the first person to complete the challenge. But don't worry, you can still win section 2!", "**You are the first person to complete the challenge!** You will be contacted about your prize shortly."][UserHasWon()] + """
-
-Have some feedback? We'd love to hear it! DM <@276080091749154816> and let him know your thoughts on the challenge so far!""",
-            color = 0x0094ff
-        ))
-        await client.send_message(client.get_channel(Winners), "<@" + message.author.id + ">, " + message.author.name + " has finished!")
 
     if message.channel.id == Pending:
         if message.content == "!agree":
-            Role = discord.utils.get(server.roles, name="Verified")
-            if Execute("Get", "SELECT * FROM scores WHERE userId = \"" + message.author.id + "\"") == []:
-                Execute(
-                    "Set",
-                    "INSERT INTO scores (userId, points, level) VALUES (\"" + message.author.id + "\", 1, 1)"
-                )
-            await client.add_roles(message.author, Role)
+            if await VerifyUser(message.author):
+                Role = discord.utils.get(server.roles, name="Verified")
+                if Execute("Get", "SELECT * FROM scores WHERE userId = \"" + message.author.id + "\"") == []:
+                    Execute(
+                        "Set",
+                        "INSERT INTO scores (userId, points, level) VALUES (\"" + message.author.id + "\", 1, 1)"
+                    )
+                await client.add_roles(message.author, Role)
         else:
             await client.delete_message(message)
             return
@@ -1659,7 +1703,7 @@ Have some feedback? We'd love to hear it! DM <@276080091749154816> and let him k
 @client.event
 async def on_message_edit(before, after):
     try:
-        if before.author.id == client.user.id or before.channel.id == Logged.id: return
+        if before.author.id == client.user.id or before.channel.id == Logged.id or before.author.id == "592762698064986112": return
         if await GetLevel(after.author) <= 4 and after.author.id != client.user.id:
             if await FilterMessage(after):
                 return
@@ -1669,7 +1713,7 @@ async def on_message_edit(before, after):
 @client.event
 async def on_member_update(before, after):
     try:
-        if await GetLevel(after) <= 4:
+        if await GetLevel(after) < 4:
             Name = after.nick or after.name
             Possible = [x * x.isalpha() for x in Name.lower().split()]
             """with time_limit(1, "sleep"):
@@ -1684,11 +1728,13 @@ async def on_member_update(before, after):
                         "Sorry, that nickname has been flagged as inappropriate! Please try another one."
                     )
                     return
+            if "🔨" in Name or "🛠" in Name or "⛏" in Name:
+                await client.change_nickname(after, "Unnamed")
     except Exception as e:
         print("30",e)
     
     try:
-        if await GetLevel(after) <= 7:
+        if await GetLevel(after) < 4:
             Gang = Execute("Get", "SELECT gang from scores WHERE userId = \"" + after.id + "\"")
             Gang = Gang[0][0] if Gang else ""
             Name = after.nick or after.name
@@ -1819,4 +1865,4 @@ Type `!help` for information on how to use the commands and some useful links.
 We hope you enjoy your stay! :)"""
     )
 
-client.run("TOKEN_HERE")
+client.run("PRIVATE BOT TOKEN HERE")
