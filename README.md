@@ -1,6 +1,3 @@
 # Mr. SCF Discord Bot
 
-**This bot will be rewritten soon. As such, unimportant pull requests will be ignored.**
-
-This is the source of the bot that is currently used in the ScriptersCF Discord server.
-
+This was our previous Discord bot, this repository has now been archived as it has been replaced by [ScriptersCF/mr-script-bot](https://github.com/ScriptersCF/mr-script-bot).
